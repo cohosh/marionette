@@ -183,7 +183,7 @@ func TestStream_Dequeue(t *testing.T) {
 
 		// Dequeue from stream as a cell.
 		if diff := cmp.Diff(stream.Dequeue(0), &marionette.Cell{
-			Type:       marionette.NORMAL,
+			Type:       marionette.CellTypeNormal,
 			Length:     marionette.CellHeaderSize + 55,
 			StreamID:   100,
 			SequenceID: 0,
@@ -194,7 +194,7 @@ func TestStream_Dequeue(t *testing.T) {
 
 		// Dequeuing again should return an empty cell.
 		if diff := cmp.Diff(stream.Dequeue(0), &marionette.Cell{
-			Type:       marionette.NORMAL,
+			Type:       marionette.CellTypeNormal,
 			Length:     marionette.CellHeaderSize,
 			StreamID:   100,
 			SequenceID: 1,
@@ -206,7 +206,7 @@ func TestStream_Dequeue(t *testing.T) {
 		if err := stream.Close(); err != nil {
 			t.Fatal(err)
 		} else if diff := cmp.Diff(stream.Dequeue(0), &marionette.Cell{
-			Type:       marionette.END_OF_STREAM,
+			Type:       marionette.CellTypeEOS,
 			Length:     marionette.CellHeaderSize,
 			StreamID:   100,
 			SequenceID: 2,
@@ -228,7 +228,7 @@ func TestStream_Dequeue(t *testing.T) {
 
 		// Dequeue from stream as a cell with padding.
 		if diff := cmp.Diff(stream.Dequeue(marionette.CellHeaderSize+20), &marionette.Cell{
-			Type:       marionette.NORMAL,
+			Type:       marionette.CellTypeNormal,
 			Length:     marionette.CellHeaderSize + 20,
 			StreamID:   100,
 			SequenceID: 0,
@@ -251,7 +251,7 @@ func TestStream_Dequeue(t *testing.T) {
 
 		// The cell length should be capped at the max.
 		if diff := cmp.Diff(stream.Dequeue(marionette.MaxCellLength+20), &marionette.Cell{
-			Type:       marionette.NORMAL,
+			Type:       marionette.CellTypeNormal,
 			Length:     marionette.MaxCellLength,
 			StreamID:   100,
 			SequenceID: 0,

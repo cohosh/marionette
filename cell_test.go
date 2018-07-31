@@ -23,7 +23,7 @@ func TestCell_Compare(t *testing.T) {
 
 func TestCell_Equal(t *testing.T) {
 	cell := &marionette.Cell{
-		Type:       marionette.NORMAL,
+		Type:       marionette.CellTypeNormal,
 		Payload:    []byte("foo"),
 		SequenceID: 1,
 		StreamID:   3,
@@ -81,7 +81,7 @@ func TestCell_Equal(t *testing.T) {
 
 func TestCell_MarshalBinary(t *testing.T) {
 	cell := &marionette.Cell{
-		Type:       marionette.NORMAL,
+		Type:       marionette.CellTypeNormal,
 		Payload:    []byte("foo"),
 		Length:     28,
 		SequenceID: 1,

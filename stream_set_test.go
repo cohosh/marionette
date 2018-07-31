@@ -97,8 +97,8 @@ func TestStreamSet_Dequeue(t *testing.T) {
 		sort.Slice(cells, func(i, j int) bool { return cells[i].StreamID < cells[j].StreamID })
 
 		exp := []*marionette.Cell{
-			{Type: marionette.NORMAL, StreamID: stream0.ID(), SequenceID: 0, Payload: []byte("foo"), Length: 28},
-			{Type: marionette.NORMAL, StreamID: stream1.ID(), SequenceID: 0, Payload: []byte("bar"), Length: 28},
+			{Type: marionette.CellTypeNormal, StreamID: stream0.ID(), SequenceID: 0, Payload: []byte("foo"), Length: 28},
+			{Type: marionette.CellTypeNormal, StreamID: stream1.ID(), SequenceID: 0, Payload: []byte("bar"), Length: 28},
 		}
 		sort.Slice(exp, func(i, j int) bool { return exp[i].StreamID < exp[j].StreamID })
 
@@ -114,7 +114,7 @@ func TestStreamSet_Dequeue(t *testing.T) {
 		// Closing a stream should cause an end-of-stream dequeue.
 		if err := stream0.Close(); err != nil {
 			t.Fatal(err)
-		} else if diff := cmp.Diff(ss.Dequeue(0), &marionette.Cell{Type: marionette.END_OF_STREAM, StreamID: stream0.ID(), SequenceID: 1, Length: 25}); diff != "" {
+		} else if diff := cmp.Diff(ss.Dequeue(0), &marionette.Cell{Type: marionette.CellTypeEOS, StreamID: stream0.ID(), SequenceID: 1, Length: 25}); diff != "" {
 			t.Fatal(diff)
 		}
 	})

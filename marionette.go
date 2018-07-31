@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// Party constants.
 const (
 	PartyClient = "client"
 	PartyServer = "server"

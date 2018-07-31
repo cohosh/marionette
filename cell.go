@@ -7,14 +7,19 @@ import (
 )
 
 const (
+	// CellHeaderSize is the number of non-payload bytes used by a cell.
 	CellHeaderSize = 25
-	MaxCellLength  = 32768 // 262144
+
+	// MaxCellLength is the maximum allowed size of a serialized cell.
+	MaxCellLength = 32768
 )
 
 const (
-	NORMAL        = 0x1
-	END_OF_STREAM = 0x2
-	NEGOTIATE     = 0x3
+	// Normal cells carry zero or more bytes in a payload.
+	CellTypeNormal = 0x1
+
+	// EOS (end-of-stream) cells mark the end of streams and carry no payload.
+	CellTypeEOS = 0x2
 )
 
 // Cell represents a single unit of data sent between the client & server.
@@ -22,7 +27,7 @@ const (
 // This cell is associated with a specific stream and the encoder/decoders
 // handle ordering based on sequence id.
 type Cell struct {
-	Type       int    // Record type (NORMAL, END_OF_STREAM)
+	Type       int    // Record type (normal, end-of-stream)
 	Payload    []byte // Data
 	Length     int    // Size of marshaled data, if specified.
 	StreamID   int    // Associated stream
@@ -52,7 +57,7 @@ func (c *Cell) Compare(other *Cell) int {
 	return 0
 }
 
-// Equal returns true if the payload, stream, sequence, uuid, and instance are the same.
+// Equal returns true if the payload, stream id, sequence, uuid, and instance id are the same.
 func (c *Cell) Equal(other *Cell) bool {
 	if c == nil && other == nil {
 		return true
@@ -81,7 +86,7 @@ func (c *Cell) paddingN() int {
 	return n
 }
 
-// MarshalBinary returns a byte slice with an encoded cell.
+// MarshalBinary returns a byte slice with a serialized cell.
 func (c *Cell) MarshalBinary() ([]byte, error) {
 	buf := bytes.NewBuffer(make([]byte, 0, c.Size()))
 	binary.Write(buf, binary.BigEndian, uint32(c.Size()))
@@ -93,13 +98,11 @@ func (c *Cell) MarshalBinary() ([]byte, error) {
 	binary.Write(buf, binary.BigEndian, uint8(c.Type))
 	buf.Write(c.Payload)
 	buf.Write(make([]byte, c.paddingN()))
-
 	assert(buf.Len() == CellHeaderSize+len(c.Payload)+c.paddingN())
-
 	return buf.Bytes(), nil
 }
 
-// UnmarshalBinary decodes a cell from binary-encoded data.
+// UnmarshalBinary decodes a serialized cell.
 func (c *Cell) UnmarshalBinary(data []byte) (err error) {
 	br := bytes.NewReader(data)
 
@@ -162,9 +165,3 @@ func (c *Cell) UnmarshalBinary(data []byte) (err error) {
 
 	return nil
 }
-
-type Cells []*Cell
-
-func (a Cells) Len() int           { return len(a) }
-func (a Cells) Less(i, j int) bool { return a[i].Compare(a[j]) == -1 }
-func (a Cells) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }

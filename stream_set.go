@@ -15,24 +15,27 @@ import (
 )
 
 const (
-	StreamSetMonitorInterval = 1 * time.Second
-	StreamCloseTimeout       = 5 * time.Second
+	// StreamCloseTimeout is the amount of time before an idle read-closed or
+	// write-closed stream is reaped by a monitoring goroutine.
+	StreamCloseTimeout = 5 * time.Second
 )
 
-var (
-	evStreams = expvar.NewInt("streams")
-)
+// evStreams is a global expvar variable for tracking open streams.
+var evStreams = expvar.NewInt("streams")
 
+// StreamSet represents a multiplexer for a set of streams for a connection.
 type StreamSet struct {
 	mu        sync.RWMutex
-	streams   map[int]*Stream
-	streamIDs []int
-	wnotify   chan struct{}
+	streams   map[int]*Stream // streams by id
+	streamIDs []int           // cached list of all stream ids
+	wnotify   chan struct{}   // notification of write changes
 
+	// Close management
 	closing chan struct{}
 	once    sync.Once
 	wg      sync.WaitGroup
 
+	// Callback executed when a new stream is created.
 	OnNewStream func(*Stream)
 
 	// Directory for storing stream traces.
@@ -133,6 +136,8 @@ func (ss *StreamSet) create(id int) *Stream {
 	}
 
 	stream := NewStream(id)
+
+	// Create a per-stream log if trace path is specified.
 	if ss.TracePath != "" {
 		path := filepath.Join(ss.TracePath, strconv.Itoa(id))
 		if err := os.MkdirAll(ss.TracePath, 0777); err != nil {
@@ -146,14 +151,18 @@ func (ss *StreamSet) create(id int) *Stream {
 		stream.TraceWriter.Write([]byte("[create]"))
 	}
 
+	// Add stream to set.
 	ss.streams[stream.id] = stream
 	ss.streamIDs = append(ss.streamIDs, stream.id)
 
+	// Add to global counter.
+	evStreams.Add(1)
+
+	// Monitor each stream closing in a separate goroutine.
 	ss.wg.Add(1)
 	go func() { defer ss.wg.Done(); ss.monitorStream(stream) }()
 
-	evStreams.Add(1)
-
+	// Monitor read/write changes in a separate goroutine per stream.
 	ss.wg.Add(1)
 	go func() { defer ss.wg.Done(); ss.handleStream(stream) }()
 
@@ -165,6 +174,8 @@ func (ss *StreamSet) create(id int) *Stream {
 	return stream
 }
 
+// remove removes stream from the set and decrements open stream count.
+// This must be called under lock.
 func (ss *StreamSet) remove(stream *Stream) {
 	streamID := stream.ID()
 
@@ -235,6 +246,8 @@ func (ss *StreamSet) WriteNotify() <-chan struct{} {
 	return ss.wnotify
 }
 
+// notifyWrite closes previous write notification channel and creates a new one.
+// This provides a broadcast to all interested parties.
 func (ss *StreamSet) notifyWrite() {
 	ss.mu.Lock()
 	close(ss.wnotify)
@@ -242,6 +255,7 @@ func (ss *StreamSet) notifyWrite() {
 	ss.mu.Unlock()
 }
 
+// handleStream continually monitors write changes for stream.
 func (ss *StreamSet) handleStream(stream *Stream) {
 	notify := stream.WriteNotify()
 	ss.notifyWrite()

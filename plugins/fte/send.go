@@ -63,7 +63,7 @@ func send(ctx context.Context, fsm marionette.FSM, args []interface{}, blocking 
 		// nop
 	} else if cell == nil && blocking {
 		logger.Debug("no cell, sending empty cell")
-		cell = marionette.NewCell(0, 0, 0, marionette.NORMAL)
+		cell = marionette.NewCell(0, 0, 0, marionette.CellTypeNormal)
 	} else {
 		return nil
 	}

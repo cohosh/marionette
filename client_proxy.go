@@ -23,6 +23,7 @@ func NewClientProxy(ln net.Listener, dialer *Dialer) *ClientProxy {
 	}
 }
 
+// Open starts the proxy listeners and waits for connections.
 func (p *ClientProxy) Open() error {
 	p.wg.Add(1)
 	go func() { defer p.wg.Done(); p.run() }()
@@ -30,10 +31,15 @@ func (p *ClientProxy) Open() error {
 	return nil
 }
 
+// Close stops the listener.
 func (p *ClientProxy) Close() error {
+	if p.ln != nil {
+		return p.ln.Close()
+	}
 	return nil
 }
 
+// run executes in a separate goroutine and continually processes incoming connections.
 func (p *ClientProxy) run() {
 	Logger.Debug("client proxy: listening")
 	defer Logger.Debug("client proxy: closed")
@@ -50,6 +56,7 @@ func (p *ClientProxy) run() {
 	}
 }
 
+// handleConn continually copies between the incoming connection and stream.
 func (p *ClientProxy) handleConn(incomingConn net.Conn) {
 	defer incomingConn.Close()
 

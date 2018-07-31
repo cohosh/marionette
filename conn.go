@@ -7,20 +7,29 @@ import (
 	"sync"
 )
 
+// BufferedConn wraps a net.Conn and continually reads from it into a buffer.
+//
+// The buffer is inspectable and seekable by the caller. This provides buffering
+// until a complete cell can be decoded from the connection. The buffer is sized
+// based on the max cell size and does not support cells that exceed that size.
 type BufferedConn struct {
 	net.Conn
 
+	// Current buffer & last error, protected for concurrent use.
 	mu  sync.RWMutex
 	buf []byte
 	err error
 
+	// Close management.
 	closing chan struct{}
 	once    sync.Once
 
+	// Channels used to notify caller when the connection & buffer have changed.
 	seekNotify  chan struct{} // sent when seeking forward
 	writeNotify chan struct{} // sent when data has been written to the buffer.
 }
 
+// NewBufferedConn returns a new BufferConn wrapping conn, sized to bufferSize.
 func NewBufferedConn(conn net.Conn, bufferSize int) *BufferedConn {
 	c := &BufferedConn{
 		Conn:    conn,
@@ -40,7 +49,7 @@ func (conn *BufferedConn) Close() error {
 	return conn.Conn.Close()
 }
 
-// Append adds b to the end of the buffer.
+// Append adds b to the end of the buffer, under lock.
 func (conn *BufferedConn) Append(b []byte) {
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
@@ -154,6 +163,7 @@ func (conn *BufferedConn) monitor() {
 	}
 }
 
+// notifySeek performs a non-blocking send to the seekNotify channel.
 func (conn *BufferedConn) notifySeek() {
 	select {
 	case conn.seekNotify <- struct{}{}:
@@ -161,6 +171,7 @@ func (conn *BufferedConn) notifySeek() {
 	}
 }
 
+// notifyWrite performs a non-blocking send to the seekWrite channel.
 func (conn *BufferedConn) notifyWrite() {
 	select {
 	case conn.writeNotify <- struct{}{}:
@@ -188,6 +199,7 @@ func isTemporaryError(err error) bool {
 	return false
 }
 
+// isEOFError returns true if error represents a closed connection.
 func isEOFError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "connection reset by peer")
 }

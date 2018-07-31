@@ -20,17 +20,18 @@ var (
 // Listener listens on a port and communicates over the marionette protocol.
 type Listener struct {
 	mu         sync.RWMutex
-	iface      string
-	ln         net.Listener
-	conns      map[net.Conn]struct{}
-	fsms       map[FSM]struct{}
-	doc        *mar.Document
-	newStreams chan *Stream
-	err        error
+	iface      string                // bind hostname
+	ln         net.Listener          // underlying listener
+	conns      map[net.Conn]struct{} // open connections
+	fsms       map[FSM]struct{}      // open FSMs
+	doc        *mar.Document         // executing MAR document
+	newStreams chan *Stream          // channel used to send all new streams
+	err        error                 // last received error
 
 	ctx    context.Context
 	cancel func()
 
+	// Close management
 	once    sync.Once
 	wg      sync.WaitGroup
 	closing chan struct{}
@@ -51,6 +52,7 @@ func Listen(doc *mar.Document, iface string) (*Listener, error) {
 
 	Logger.Debug("listen", zap.String("transport", doc.Transport), zap.String("bind", addr))
 
+	// Open the underlying listener.
 	ln, err := net.Listen(doc.Transport, addr)
 	if err != nil {
 		return nil, err
@@ -148,10 +150,12 @@ func (l *Listener) accept() {
 			return
 		}
 
+		// Generate a new multiplexing set for connection.
 		streamSet := NewStreamSet()
 		streamSet.OnNewStream = l.onNewStream
 		streamSet.TracePath = l.TracePath
 
+		// Create FSM for processing communication.
 		fsm := NewFSM(l.doc, l.iface, PartyServer, conn, streamSet)
 
 		// Run execution in a separate goroutine.
@@ -160,6 +164,8 @@ func (l *Listener) accept() {
 	}
 }
 
+// execute continually executes the FSM until connection is closed.
+// This function is run in a separate goroutine for each connection.
 func (l *Listener) execute(fsm FSM, conn net.Conn) {
 	defer fsm.StreamSet().Close()
 
@@ -186,6 +192,7 @@ func (l *Listener) onNewStream(stream *Stream) {
 	l.newStreams <- stream
 }
 
+// addConn adds a connection & associated FSM to the open set.
 func (l *Listener) addConn(conn net.Conn, fsm FSM) {
 	l.mu.Lock()
 	l.conns[conn] = struct{}{}
@@ -193,6 +200,7 @@ func (l *Listener) addConn(conn net.Conn, fsm FSM) {
 	l.mu.Unlock()
 }
 
+// removeConn removes a connection & associated FSM from the open set.
 func (l *Listener) removeConn(conn net.Conn, fsm FSM) {
 	l.mu.Lock()
 	delete(l.conns, conn)

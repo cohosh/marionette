@@ -24,6 +24,8 @@ var (
 	// ErrRetryTransition is returned from FSM.Next() when a transition should be reattempted.
 	ErrRetryTransition = errors.New("retry transition")
 
+	// ErrUUIDMismatch is returned when a cell is received from a different UUID.
+	// This can occur when communicating with a peer using a different MAR document.
 	ErrUUIDMismatch = errors.New("uuid mismatch")
 )
 
@@ -85,21 +87,22 @@ var _ FSM = &fsm{}
 
 // fsm is the default implementation of the FSM.
 type fsm struct {
-	doc      *mar.Document
-	host     string
-	party    string
+	mu       sync.Mutex
+	doc      *mar.Document // executing document
+	host     string        // bind hostname
+	party    string        // "client", "server"
 	fteCache *fte.Cache
 
-	conn       *BufferedConn
-	streamSet  *StreamSet
-	listeners  map[int]net.Listener
-	closeFuncs []func() error
+	conn       *BufferedConn        // connection to remote peer
+	streamSet  *StreamSet           // multiplexing stream set
+	listeners  map[int]net.Listener // spawn() listeners
+	closeFuncs []func() error       // closers used by spawn()
 
-	state string
-	stepN int
-	rand  *rand.Rand
+	state string     // current state
+	stepN int        // number of steps completed
+	rand  *rand.Rand // PRNG, seed shared by peer
 
-	mu     sync.Mutex
+	// Close management
 	closed bool
 	ctx    context.Context
 	cancel func()
@@ -107,6 +110,7 @@ type fsm struct {
 	// Lookup of transitions by src state.
 	transitions map[string][]*mar.Transition
 
+	// Variable storage used by tg module.
 	vars map[string]interface{}
 
 	// Set by the first sender and used to seed PRNG.
@@ -132,6 +136,7 @@ func NewFSM(doc *mar.Document, host, party string, conn net.Conn, streamSet *Str
 	return fsm
 }
 
+// buildTransitions caches a mapping of source to destination transition for the document.
 func (fsm *fsm) buildTransitions() {
 	fsm.transitions = make(map[string][]*mar.Transition)
 	for _, t := range fsm.doc.Transitions {
@@ -139,6 +144,7 @@ func (fsm *fsm) buildTransitions() {
 	}
 }
 
+// initFirstSender generates an instance ID & seeds the PRNG if this party initiates the connection.
 func (fsm *fsm) initFirstSender() {
 	if fsm.party != fsm.doc.FirstSender() {
 		return
@@ -147,6 +153,7 @@ func (fsm *fsm) initFirstSender() {
 	fsm.rand = rand.New(rand.NewSource(int64(fsm.instanceID)))
 }
 
+// Close closes the underlying connection & context.
 func (fsm *fsm) Close() error {
 	fsm.mu.Lock()
 	defer fsm.mu.Unlock()
@@ -155,12 +162,14 @@ func (fsm *fsm) Close() error {
 	return fsm.Conn().Close()
 }
 
+// Closed returns true if FSM has been closed.
 func (fsm *fsm) Closed() bool {
 	fsm.mu.Lock()
 	defer fsm.mu.Unlock()
 	return fsm.closed
 }
 
+// Reset resets the state and variable set.
 func (fsm *fsm) Reset() {
 	fsm.state = "start"
 	fsm.vars = make(map[string]interface{})
@@ -200,10 +209,12 @@ func (fsm *fsm) Party() string { return fsm.party }
 // Port returns the port from the underlying document.
 // If port is a named port then it is looked up in the local variables.
 func (fsm *fsm) Port() int {
+	// Use specified port, if numeric.
 	if port, err := strconv.Atoi(fsm.doc.Port); err == nil {
 		return port
 	}
 
+	// Otherwise lookup port set as a variable.
 	if v := fsm.Var(fsm.doc.Port); v != nil {
 		port, _ := v.(int)
 		return port
@@ -223,7 +234,10 @@ func (fsm *fsm) Execute(ctx context.Context) error {
 		return err
 	}
 
+	// Continually move to the next state until we reach the "dead" state.
 	for !fsm.Dead() {
+		// Transitions can request to retry if the instance ID is updated.
+		// In this case, the PRNG is seeded and stepN steps are reprocessed w/ new PRNG.
 		if err := fsm.Next(ctx); err == ErrRetryTransition {
 			fsm.Logger().Debug("retry transition", zap.String("state", fsm.State()))
 			continue
@@ -234,7 +248,9 @@ func (fsm *fsm) Execute(ctx context.Context) error {
 	return nil
 }
 
+// Next transitions to the next state in the executing MAR document..
 func (fsm *fsm) Next(ctx context.Context) (err error) {
+	// Notify caller stream is closed if FSM has been closed.
 	if fsm.Closed() {
 		return ErrStreamClosed
 	}
@@ -251,6 +267,8 @@ func (fsm *fsm) Next(ctx context.Context) (err error) {
 		return err
 	}
 
+	// Track number of steps so they can be replayed once the instance ID is received.
+	// This only occurs if FSM's party is not the first sender.
 	fsm.stepN += 1
 	fsm.state = nextState
 
@@ -297,6 +315,7 @@ func (fsm *fsm) next(eval bool) (nextState string, err error) {
 
 // init initializes the PRNG if we now have a instance id.
 func (fsm *fsm) init() (err error) {
+	// Skip if already initialized or we don't have an instance ID yet.
 	if fsm.rand != nil || fsm.instanceID == 0 {
 		return nil
 	}
@@ -316,6 +335,7 @@ func (fsm *fsm) init() (err error) {
 	return nil
 }
 
+// evalActions attempts to evaluate every action until one succeeds.
 func (fsm *fsm) evalActions(actions []*mar.Action) error {
 	if len(actions) == 0 {
 		return nil
@@ -351,6 +371,7 @@ func (fsm *fsm) evalActions(actions []*mar.Action) error {
 	return ErrNoTransitions
 }
 
+// Var returns the variable value for a given key.
 func (fsm *fsm) Var(key string) interface{} {
 	switch key {
 	case "model_instance_id":
@@ -364,6 +385,7 @@ func (fsm *fsm) Var(key string) interface{} {
 	}
 }
 
+// SetVar sets the variable value for a given key.
 func (fsm *fsm) SetVar(key string, value interface{}) {
 	fsm.vars[key] = value
 }
@@ -380,6 +402,9 @@ func (fsm *fsm) DFA(regex string, n int) (DFA, error) {
 	return fsm.fteCache.DFA(regex, n)
 }
 
+// Listen opens a listener used by channel.bind(). Listener closed by Close().
+//
+// Port is chosen randomly unless MARIONETTE_CHANNEL_BIND_PORT environment variable is set.
 func (fsm *fsm) Listen() (port int, err error) {
 	addr := fsm.host
 	if s := os.Getenv("MARIONETTE_CHANNEL_BIND_PORT"); s != "" {
@@ -397,6 +422,11 @@ func (fsm *fsm) Listen() (port int, err error) {
 	return port, nil
 }
 
+// ensureConn ensures that the conn variable is set. Root FSMs are populated with
+// a connection during instantiation, however, spawned FSMs require new connections.
+//
+// For client parties, a new connection is dialed to the server.
+// For server parties, a listener is opened and it waits for the next accepted connection.
 func (fsm *fsm) ensureConn(ctx context.Context) error {
 	if fsm.conn != nil {
 		return nil
@@ -407,6 +437,7 @@ func (fsm *fsm) ensureConn(ctx context.Context) error {
 	return fsm.ensureServerConn(ctx)
 }
 
+// ensureClientConn dials a connection to the server. Connection closed on Close().
 func (fsm *fsm) ensureClientConn(ctx context.Context) error {
 	conn, err := net.Dial(fsm.doc.Transport, net.JoinHostPort(fsm.host, strconv.Itoa(fsm.Port())))
 	if err != nil {
@@ -419,6 +450,8 @@ func (fsm *fsm) ensureClientConn(ctx context.Context) error {
 	return nil
 }
 
+// ensureServerConn opens a listener and waits for the next connection.
+// Will reuse listener if previously spawned. Listener closed on Close().
 func (fsm *fsm) ensureServerConn(ctx context.Context) (err error) {
 	ln := fsm.listeners[fsm.Port()]
 	if ln == nil {
@@ -439,6 +472,7 @@ func (fsm *fsm) ensureServerConn(ctx context.Context) (err error) {
 	return nil
 }
 
+// Clone returns a copy of f. Used when spawning new FSMs.
 func (f *fsm) Clone(doc *mar.Document) FSM {
 	other := &fsm{
 		state:     "start",
@@ -462,6 +496,7 @@ func (f *fsm) Clone(doc *mar.Document) FSM {
 	return other
 }
 
+// Logger returns the logger for this FSM.
 func (fsm *fsm) Logger() *zap.Logger {
 	if fsm.Closed() {
 		return zap.NewNop()

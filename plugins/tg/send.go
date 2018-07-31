@@ -70,7 +70,7 @@ func encryptTo(fsm marionette.FSM, cipher TemplateCipher, template string, logge
 	} else if capacity > 0 {
 		cell := fsm.StreamSet().Dequeue(capacity)
 		if cell == nil {
-			cell = marionette.NewCell(0, 0, capacity, marionette.NORMAL)
+			cell = marionette.NewCell(0, 0, capacity, marionette.CellTypeNormal)
 		}
 
 		// Assign ids and marshal to bytes.

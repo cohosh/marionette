@@ -18,14 +18,14 @@ var (
 // Dialer represents a client-side dialer that communicates over the marionette protocol.
 type Dialer struct {
 	mu        sync.RWMutex
-	addr      string
-	doc       *mar.Document
-	fsm       FSM
-	streamSet *StreamSet
+	addr      string        // Server hostport to connect to
+	doc       *mar.Document // Parsed MAR document
+	fsm       FSM           // Associated FSM
+	streamSet *StreamSet    // Associated StreamSet
 
+	// Close management
 	ctx    context.Context
 	cancel func()
-
 	closed bool
 	wg     sync.WaitGroup
 
@@ -92,6 +92,7 @@ func (d *Dialer) Dial() (net.Conn, error) {
 	return d.streamSet.Create(), nil
 }
 
+// execute continually executes the FSM until the stream and dialer are closed.
 func (d *Dialer) execute() {
 	defer d.close()
 

@@ -34,26 +34,31 @@ type Stream struct {
 	rseq int
 	wseq int
 
-	ronce        sync.Once
-	readClosed   bool
-	readClosing  chan struct{}
+	// Read-side close management.
+	ronce       sync.Once
+	readClosed  bool
+	readClosing chan struct{}
+
+	// Write-side close management.
 	wonce        sync.Once
 	writeClosed  bool
 	writeClosing chan struct{}
 
-	// TODO: Find better names for these.
+	// Notification when write-side has been closed.
 	writeCloseNotified       bool
 	writeCloseNotifiedNotify chan struct{}
 
+	// Local & remote addresses for net.Conn implementation.
 	localAddr  net.Addr
 	remoteAddr net.Addr
 
-	rbuf, wbuf []byte
-	rqueue     []*Cell
-	rnotify    chan struct{}
-	wnotify    chan struct{}
+	// Read & write buffer queues & notification.
+	rbuf, wbuf []byte        // buffer pending processing
+	rqueue     []*Cell       // cells processed from read buffer
+	rnotify    chan struct{} // notification when read buffer changed
+	wnotify    chan struct{} // notification when write buffer changed
 
-	modTime time.Time
+	modTime time.Time // last change to read or write
 
 	onWrite func() // callback when a new write buffer changes
 
@@ -61,6 +66,7 @@ type Stream struct {
 	TraceWriter io.Writer
 }
 
+// NewStream returns a new stream with a givenZ
 func NewStream(id int) *Stream {
 	return &Stream{
 		id:           id,
@@ -131,6 +137,7 @@ func (s *Stream) Read(b []byte) (n int, err error) {
 	}
 }
 
+// read reads available bytes from read buffer to b.
 func (s *Stream) read(b []byte) (n int, err error) {
 	if len(s.rbuf) == 0 {
 		return 0, nil
@@ -165,6 +172,8 @@ func (s *Stream) Write(b []byte) (n int, err error) {
 	}
 
 	for {
+		// Attempt to write to write buffer.
+		// If no room available then wait for write buffer to change and try again.
 		s.mu.Lock()
 		if s.writeClosed {
 			s.mu.Unlock()
@@ -185,6 +194,9 @@ func (s *Stream) Write(b []byte) (n int, err error) {
 	}
 }
 
+// write atomically writes b to the write buffer.
+// Returns ErrWriteTooLarge if b is larger than write buffer capacity.
+// Returns n=0 and no error if there is not enough space to write all of b.
 func (s *Stream) write(b []byte) (n int, err error) {
 	if len(b) > cap(s.wbuf) {
 		return 0, ErrWriteTooLarge
@@ -205,6 +217,8 @@ func (s *Stream) WriteNotify() <-chan struct{} {
 	return s.wnotify
 }
 
+// notifyWrite closes previous write notify channel and creates a new one.
+// This provides a broadcast for all interested parties.
 func (s *Stream) notifyWrite() {
 	if s.TraceWriter != nil {
 		fmt.Fprintf(s.TraceWriter, "[notifyWrite]")
@@ -230,7 +244,7 @@ func (s *Stream) Enqueue(cell *Cell) error {
 		fmt.Fprintf(s.TraceWriter, "[Enqueue] seq=%d rseq=%d", cell.SequenceID, s.rseq)
 	}
 
-	// If sequence is out of order then add to queue and exit.
+	// If sequence is a duplicate then ignore it.
 	if cell.SequenceID < s.rseq {
 		s.logger().Info("duplicate cell sequence",
 			zap.Int("local", s.rseq),
@@ -240,14 +254,18 @@ func (s *Stream) Enqueue(cell *Cell) error {
 
 	// Add to queue & sort.
 	s.rqueue = append(s.rqueue, cell)
-	sort.Sort(Cells(s.rqueue))
+	sort.Slice(s.rqueue, func(i, j int) bool { return s.rqueue[i].Compare(s.rqueue[j]) == -1 })
 
+	// Process read queue to convert cells in the queue to bytes on the read buffer.
 	s.processReadQueue()
 	s.modTime = time.Now()
 
 	return nil
 }
 
+// processReadQueue deserializes cells in the read queue and writes the bytes to
+// the read buffer. Queue processing stops when the next cell does not match the
+// next expected sequence or if there is not enough room left in the read buffer.
 func (s *Stream) processReadQueue() {
 	// Read all consecutive cells onto the buffer.
 	var notify bool
@@ -270,7 +288,7 @@ func (s *Stream) processReadQueue() {
 		s.rseq++
 
 		// If this is the end of the stream then close out reads.
-		if cell.Type == END_OF_STREAM {
+		if cell.Type == CellTypeEOS {
 			if s.TraceWriter != nil {
 				fmt.Fprintf(s.TraceWriter, "[eos:recv] seq=%d rseq=%d qlen=%d rbuf=%d", cell.SequenceID, s.rseq, len(s.rqueue), len(s.rbuf))
 			}
@@ -319,11 +337,11 @@ func (s *Stream) Dequeue(n int) *Cell {
 		}
 		s.writeCloseNotified = true
 		close(s.writeCloseNotifiedNotify)
-		return NewCell(s.id, sequenceID, n, END_OF_STREAM)
+		return NewCell(s.id, sequenceID, n, CellTypeEOS)
 	}
 
 	// Build cell.
-	cell := NewCell(s.id, sequenceID, n, NORMAL)
+	cell := NewCell(s.id, sequenceID, n, CellTypeNormal)
 
 	// Determine payload size.
 	payloadN := n - CellHeaderSize
@@ -423,11 +441,19 @@ func (s *Stream) ReadWriteCloseNotified() bool {
 	return s.readClosed && s.writeCloseNotified
 }
 
-func (c *Stream) LocalAddr() net.Addr  { return c.localAddr }
+// LocalAddr returns the local address. Implements net.Conn.
+func (c *Stream) LocalAddr() net.Addr { return c.localAddr }
+
+// RemoteAddr returns the remote address. Implements net.Conn.
 func (c *Stream) RemoteAddr() net.Addr { return c.remoteAddr }
 
-func (c *Stream) SetDeadline(t time.Time) error      { return nil }
-func (c *Stream) SetReadDeadline(t time.Time) error  { return nil }
+// SetDeadline is a no-op. Implements net.Conn.
+func (c *Stream) SetDeadline(t time.Time) error { return nil }
+
+// SetReadDeadline is a no-op. Implements net.Conn.
+func (c *Stream) SetReadDeadline(t time.Time) error { return nil }
+
+// SetWriteDeadline is a no-op. Implements net.Conn.
 func (c *Stream) SetWriteDeadline(t time.Time) error { return nil }
 
 func (s *Stream) logger() *zap.Logger {
