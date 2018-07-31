@@ -9,14 +9,21 @@ import "C"
 
 import (
 	"errors"
+	"sync"
 	"unsafe"
 )
 
 // ErrInternal is returned any error occurs.
 var ErrInternal = errors.New("regex2dfa: internal error")
 
+// Shared mutex for all Regex2DFA calls.
+var mu sync.Mutex
+
 // Regex2DFA converts regex into a DFA table.
 func Regex2DFA(regex string) (string, error) {
+	mu.Lock()
+	defer mu.Unlock()
+
 	regex = "^" + regex + "$"
 
 	cregex := C.CString(regex)
