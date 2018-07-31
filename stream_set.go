@@ -54,6 +54,7 @@ func NewStreamSet() *StreamSet {
 
 // Close closes all streams in the set.
 func (ss *StreamSet) Close() (err error) {
+	ss.mu.Lock()
 	for _, stream := range ss.streams {
 		if e := stream.CloseWrite(); e != nil && err == nil {
 			err = e
@@ -61,6 +62,8 @@ func (ss *StreamSet) Close() (err error) {
 			err = e
 		}
 	}
+	ss.mu.Unlock()
+
 	ss.once.Do(func() { close(ss.closing) })
 	ss.wg.Wait()
 	return err
