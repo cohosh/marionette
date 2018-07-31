@@ -103,10 +103,10 @@ func (conn *BufferedConn) Peek(n int, blocking bool) ([]byte, error) {
 // This implementation only supports io.SeekCurrent.
 func (conn *BufferedConn) Seek(offset int64, whence int) (int64, error) {
 	assert(whence == io.SeekCurrent)
-	assert(offset <= int64(len(conn.buf)))
 
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
+	assert(offset <= int64(len(conn.buf)))
 
 	b := conn.buf[offset:]
 	conn.buf = conn.buf[:len(b)]
@@ -156,7 +156,9 @@ func (conn *BufferedConn) monitor() {
 
 		// If an error occurred then save on connection and exit.
 		if err != nil && !isTemporaryError(err) {
+			conn.mu.Lock()
 			conn.err = err
+			conn.mu.Unlock()
 			conn.notifyWrite()
 			return
 		}
