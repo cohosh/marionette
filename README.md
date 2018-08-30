@@ -27,6 +27,12 @@ Ensure you have a C/C++ compiler installed:
 $ yum group install -y "Development Tools"
 ```
 
+also make sure that you have the proper version of shasum installed by running:
+
+```sh
+$ yum install -y perl-Digest-SHA
+```
+
 ### Installing OpenFST
 
 You must use the included `third_party/openfst` implementation. Also note that
