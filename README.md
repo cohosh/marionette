@@ -11,14 +11,6 @@ demonstration page [here](./BrowserDemo.md)
 
 ## Development
 
-Marionette requires several dependencies to be installed first. Two of them
-are in the `third_party` directory and the third one can be downloaded from
-the web.
-
-You can use the `./build_third_party.sh` script in the root of this repository
-to build the third party libraries or follow the instructions below to manually
-build them or install them system wide.
-
 ### Installing on CentOS
 
 Ensure you have a C/C++ compiler installed:
@@ -32,6 +24,21 @@ also make sure that you have the proper version of shasum installed by running:
 ```sh
 $ yum install -y perl-Digest-SHA
 ```
+### Installing Third Party Libraries
+
+Marionette requires several dependencies to be installed first. Two of them
+are in the `third_party` directory and the third one can be downloaded from
+the web.
+
+You can use the `./build_third_party.sh` script in the root of this repository
+to build the third party libraries:
+
+* OpenFST
+* re2
+* GMP
+
+or follow the instructions below to manually
+build them or install them system wide.
 
 ### Installing OpenFST
 
