@@ -56,7 +56,7 @@ SOURCE DESTINATION ACTION_BLOCK PROBABILITY
 - `SOURCE` is the state to transition from.
 - `DESTINATION` is the state to transition to.
 - `ACTION_BLOCK` is the name of the action block to execute.
-- `PROBABILITY` is the probability of execution, between `0.0` and `1.0`.
+- `PROBABILITY` is the probability of execution, between `0.0` and `1.0`. This format location can also take on the value `error`.
 
 The state machine always starts in the `start` state and document should always
 end up in the `end` state. A special `dead` state is added after the `end` state
@@ -64,6 +64,8 @@ by the FSM evaluator. The `action` state name is not allowed.
 
 The probability for transitions that share a common source state should add up
 to `1.0`.
+
+The error transition is an epsilon state which is activated when none of the other states can be transitioned to.
 
 
 ### Action Blocks
@@ -96,7 +98,7 @@ PARTY MODULE.NAME([ARG, [ARG, ...]]) [if regex_match_incoming("REGEX")]
 - `MODULE` specifies the plugin module where the function exists.
 - `NAME` specifies the plugin name.
 - `ARG...` represents zero or more comma-delimited arguments passed to the plugin.
-- `REGEX` is a regular expression that the incoming data must match to execute.
+- `REGEX` is a regular expression that incoming data must match to execute.  The regular expression is also the form that outgoing data will be shaped into.
 
 Actions are only performed by one party (either `client` or `server`), however,
 some actions have built-in counter actions. For example, when a client sends
