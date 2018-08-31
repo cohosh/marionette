@@ -341,6 +341,41 @@ action echo:
 ```
 
 
+## Installing new build-in formats
+
+When adding new formats, you'll need to first install `go-bindata`:
+
+```sh
+$ go get -u github.com/jteeuwen/go-bindata/...
+```
+
+Then you can use `go generate` to convert the asset files to Go files:
+
+```sh
+$ go generate ./...
+```
+
+To install the original [marionette][] library for comparing tests, download
+the latest version, unpack the archive and run:
+
+
+## Testing
+
+Use the built-in go testing command to run the unit tests:
+
+```sh
+$ go test ./...
+```
+
+If you have the original Python marionette installed then you can run tests
+of the ports using the `python` tag:
+
+```sh
+$ go test -tags python ./regex2dfa
+$ go test -tags python ./fte
+```
+
+
 ## References
 
 Below are some references to see how these plugins are used in practice within
