@@ -182,6 +182,9 @@ func (l *Listener) execute(fsm FSM, conn net.Conn) {
 		} else if err != nil {
 			Logger.Debug("server fsm execution error", zap.Error(err))
 			return
+		} else if fsm.Errored() {
+			Logger.Debug("server fsm has error transition, stopping")
+			return
 		}
 		fsm.Reset()
 	}

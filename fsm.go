@@ -49,6 +49,9 @@ type FSM interface {
 	// Returns true if State() == 'dead'
 	Dead() bool
 
+	// Returns true if FSM entered an error transition.
+	Errored() bool
+
 	// Moves to the next available state.
 	// Returns ErrNoTransition if there is no state to move to.
 	Next(ctx context.Context) error
@@ -91,6 +94,7 @@ type fsm struct {
 	doc      *mar.Document // executing document
 	host     string        // bind hostname
 	party    string        // "client", "server"
+	errored  bool          // entered error transition
 	fteCache *fte.Cache
 
 	conn       *BufferedConn        // connection to remote peer
@@ -172,6 +176,7 @@ func (fsm *fsm) Closed() bool {
 // Reset resets the state and variable set.
 func (fsm *fsm) Reset() {
 	fsm.state = "start"
+	fsm.errored = false
 	fsm.vars = make(map[string]interface{})
 
 	for _, fn := range fsm.closeFuncs {
@@ -225,6 +230,9 @@ func (fsm *fsm) Port() int {
 
 // Dead returns true when the FSM is complete.
 func (fsm *fsm) Dead() bool { return fsm.state == "dead" }
+
+// Errored returns true if FSM entered an error transition.
+func (fsm *fsm) Errored() bool { return fsm.errored }
 
 // Execute runs the the FSM to completion.
 func (fsm *fsm) Execute(ctx context.Context) error {
@@ -289,28 +297,38 @@ func (fsm *fsm) next(eval bool) (nextState string, err error) {
 	transitions = append(transitions, errorTransitions...)
 
 	// Attempt each possible transition.
+	var transitionErr error
 	for _, transition := range transitions {
-		// If there's no action block then move to the next state.
-		if transition.ActionBlock == "NULL" {
-			return transition.Destination, nil
-		}
+		// Execute if there is an action block.
+		if transition.ActionBlock != "NULL" {
+			// Find all actions for this destination and current party.
+			blk := fsm.doc.ActionBlock(transition.ActionBlock)
+			if blk == nil {
+				return "", fmt.Errorf("fsm.Next(): action block not found: %q", transition.ActionBlock)
+			}
+			actions := mar.FilterActionsByParty(blk.Actions, fsm.party)
 
-		// Find all actions for this destination and current party.
-		blk := fsm.doc.ActionBlock(transition.ActionBlock)
-		if blk == nil {
-			return "", fmt.Errorf("fsm.Next(): action block not found: %q", transition.ActionBlock)
-		}
-		actions := mar.FilterActionsByParty(blk.Actions, fsm.party)
-
-		// Attempt to execute each action.
-		if eval {
-			if err := fsm.evalActions(actions); err != nil {
-				return "", err
+			// Attempt to execute each action.
+			if eval {
+				if err := fsm.evalActions(actions); err == ErrRetryTransition {
+					return "", err
+				} else if err != nil {
+					if transitionErr == nil {
+						transitionErr = err
+					}
+					continue
+				}
 			}
 		}
+
+		// Mark FSM as errored so we don't continue looping after execution.
+		if transition.IsErrorTransition {
+			fsm.errored = true
+		}
+
 		return transition.Destination, nil
 	}
-	return "", nil
+	return "", transitionErr
 }
 
 // init initializes the PRNG if we now have a instance id.
