@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/redjack/marionette"
-	"github.com/redjack/marionette/fte"
 	"go.uber.org/zap"
 )
 
@@ -72,9 +71,7 @@ func recv(ctx context.Context, fsm marionette.FSM, args []interface{}, blocking 
 		zap.Int("ciphertext", len(ciphertext)),
 		zap.Error(err),
 	)
-	if err == fte.ErrShortCiphertext {
-		return nil
-	} else if err != nil {
+	if err != nil {
 		logger().Error("cannot decrypt ciphertext", zap.Error(err))
 		return err
 	}
