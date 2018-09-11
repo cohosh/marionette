@@ -1,7 +1,7 @@
 marionette
 ==========
 
-This is a Go port of the [marionette][] programmable networy proxy.
+This is a Go port of the [marionette][] programmable protocol obfuscation tool..
 
 [marionette]: https://github.com/marionette-tg/marionette
 
@@ -11,4 +11,4 @@ This is a Go port of the [marionette][] programmable networy proxy.
 - [User Guide](doc/USER_GUIDE.md)
 - [Design Document](doc/DESIGN.md)
 - [Developer Manual](doc/DEVELOPER_MANUAL.md)
-- [Protocol Design](doc/Protocol.md)
+- [Protocol Design](doc/PROTOCOL.md)
