@@ -15,19 +15,11 @@ Once your Go installation is set up, fetch the `marionette` source into your
 `GOPATH`, install and build your dependencies, and then build and install
 `marionette`:
 
-```sh
-$ go get github.com/redjack/marionette
-$ cd $GOPATH/src/github.com/redjack/marionette
-$ ./build_third_party.sh
-$ dep ensure
-$ go install ./cmd/marionette
-```
+Three dependencies are required. Two of them
+are in the `third_party` directory and the third one can be downloaded from
+the web.
 
-If the installation is successful, you'll find the `marionette` binary at
-`$GOPATH/bin/marionette`.
-
-
-### Installing on CentOS
+### If You Are Installing on CentOS
 
 Ensure you have a C/C++ compiler installed & have the proper version of `shasum`
 installed:
@@ -37,6 +29,79 @@ $ yum group install -y "Development Tools"
 $ yum install -y perl-Digest-SHA
 ```
 
+### Installing OpenFST
+
+You must use the included `third_party/openfst` implementation. Also note that
+static builds must be enabled via the `--enable-static` flag.
+
+```sh
+$ cd third_party/openfst
+$ ./configure --enable-static=yes
+$ make
+$ sudo make install
+```
+
+### Installing re2
+
+You must use the included `third_party/re2` implementation:
+
+```sh
+$ cd third_party/re2
+$ make
+$ sudo make install
+```
+
+### GMP
+
+Download the latest version of [GMP][], unpack the
+archive and run:
+
+```sh
+$ wget https://gmplib.org/download/gmp/gmp-6.1.2.tar.bz2
+$ tar -xvjf gmp-6.1.2.tar.bz2
+$ cd gmp-6.1.2
+
+$ ./configure --enable-cxx
+$ make
+$ sudo make install
+$ make check
+```
+
+### Building the Marionette Binary
+
+First, make sure you have installed Go from [https://golang.org/][go]. Next,
+install `dep` using [these instructions][dep].
+
+Finally, retrieve the source, update project dependencies, and install the
+`marionette` binary:
+
+```sh
+$ go get github.com/redjack/marionette
+$ cd $GOPATH/src/github.com/redjack/marionette
+$ dep ensure
+$ go install ./cmd/marionette
+```
+
+The `marionette` binary is now installed in your `$GOPATH/bin` folder.
+
+[marionette]: https://github.com/marionette-tg/marionette
+[GMP]: https://gmplib.org
+[go]: https://golang.org/
+[dep]: https://github.com/golang/dep#installation
+
+## Installing new build-in formats
+
+When adding new formats, you'll need to first install `go-bindata`:
+
+```sh
+$ go get -u github.com/jteeuwen/go-bindata/...
+```
+
+Then you can use `go generate` to convert the asset files to Go files:
+
+```sh
+$ go generate ./...
+```
 
 ## View available subcommands
 
